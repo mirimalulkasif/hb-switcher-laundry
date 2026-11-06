@@ -1,0 +1,67 @@
+{
+  "pluginAlias": "SwitcherLaundry",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "Watches a Switcher Power Plug and exposes HomeKit sensors when a laundry cycle finishes. Apple Home does not show live watts; this plugin listens to the same Switcher broadcasts Eve uses.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "default": "Switcher Laundry",
+        "required": true
+      },
+      "devices": {
+        "title": "Laundry devices",
+        "type": "array",
+        "required": true,
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "title": "Name",
+              "type": "string",
+              "default": "Washing Machine",
+              "required": true
+            },
+            "identifier": {
+              "title": "Switcher identifier",
+              "type": "string",
+              "required": true,
+              "description": "Device id, IP address, or exact name from the Switcher app / Homebridge Switcher plugin logs."
+            },
+            "startWatts": {
+              "title": "Start threshold (W)",
+              "type": "number",
+              "default": 5,
+              "minimum": 0,
+              "description": "Power must stay at or above this value to count as a real cycle start."
+            },
+            "stopWatts": {
+              "title": "Stop threshold (W)",
+              "type": "number",
+              "default": 2,
+              "minimum": 0,
+              "description": "Power must stay at or below this value before the cycle can finish."
+            },
+            "startSeconds": {
+              "title": "Start confirm (seconds)",
+              "type": "integer",
+              "default": 60,
+              "minimum": 1,
+              "description": "How long power must stay high before marking the washer as running."
+            },
+            "stopSeconds": {
+              "title": "Stop confirm (seconds)",
+              "type": "integer",
+              "default": 180,
+              "minimum": 1,
+              "description": "How long power must stay low after running before marking the washer as done. Use longer than fill/rinse pauses."
+            }
+          }
+        }
+      }
+    }
+  }
+}

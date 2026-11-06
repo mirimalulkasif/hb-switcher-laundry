@@ -1,0 +1,51 @@
+{
+  "name": "homebridge-switcher-laundry",
+  "displayName": "Switcher Laundry",
+  "version": "1.0.0",
+  "description": "Detect when a washer or dryer finishes by watching a Switcher Power Plug wattage.",
+  "license": "Apache-2.0",
+  "author": "mirimalulkasif",
+  "homepage": "https://github.com/mirimalulkasif/homebridge-switcher-laundry#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mirimalulkasif/homebridge-switcher-laundry.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mirimalulkasif/homebridge-switcher-laundry/issues"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "supports-hap",
+    "switcher",
+    "laundry",
+    "washing-machine",
+    "power-plug"
+  ],
+  "engines": {
+    "node": ">=18.0.0",
+    "homebridge": "^1.6.0 || ^2.0.0"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "config.schema.json",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "npm run build && node --test test/*.test.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "switcher-js2": "^1.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "homebridge": "^1.11.0",
+    "typescript": "^5.9.0"
+  },
+  "peerDependencies": {
+    "homebridge": "^1.6.0 || ^2.0.0"
+  }
+}
