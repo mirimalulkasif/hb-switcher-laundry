@@ -21,7 +21,7 @@ sudo npm install -g homebridge-switcher-laundry
 Until the package is on npm, install from GitHub:
 
 ```sh
-sudo npm install -g github:mirimalulkasif/homebridge-switcher-laundry
+sudo npm install -g github:mirimalulkasif/hb-switcher-laundry
 ```
 
 Restart Homebridge, then add **Switcher Laundry** from the Plugins page.

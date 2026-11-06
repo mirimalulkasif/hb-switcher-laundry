@@ -5,13 +5,13 @@
   "description": "Detect when a washer or dryer finishes by watching a Switcher Power Plug wattage.",
   "license": "Apache-2.0",
   "author": "mirimalulkasif",
-  "homepage": "https://github.com/mirimalulkasif/homebridge-switcher-laundry#readme",
+  "homepage": "https://github.com/mirimalulkasif/hb-switcher-laundry#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mirimalulkasif/homebridge-switcher-laundry.git"
+    "url": "git+https://github.com/mirimalulkasif/hb-switcher-laundry.git"
   },
   "bugs": {
-    "url": "https://github.com/mirimalulkasif/homebridge-switcher-laundry/issues"
+    "url": "https://github.com/mirimalulkasif/hb-switcher-laundry/issues"
   },
   "keywords": [
     "homebridge-plugin",
