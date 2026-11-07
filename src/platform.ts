@@ -69,7 +69,9 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
       const uuid = this.api.hap.uuid.generate(`${PLUGIN_NAME}:${device.identifier}`);
       activeIds.add(uuid);
       const existing = this.cachedAccessories.find((item) => item.UUID === uuid);
-      const accessory = existing ?? new this.api.platformAccessory(device.name, uuid);
+      const category = this.api.hap.Categories.SENSOR;
+      const accessory = existing ?? new this.api.platformAccessory(device.name, uuid, category);
+      accessory.category = category;
       accessory.context.identifier = device.identifier;
 
       const handler = new LaundryAccessory(this, accessory, device, this.powerFactory(device));

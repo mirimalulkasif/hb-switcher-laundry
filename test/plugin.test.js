@@ -34,8 +34,13 @@ test('HomeKit sensors follow running and done wattage thresholds', async () => {
     const accessory = accessories[0];
     const done = accessory.getServiceById(hap.Service.ContactSensor, 'washer-done');
     const running = accessory.getServiceById(hap.Service.OccupancySensor, 'washer-running');
+    const clear = accessory.getServiceById(hap.Service.Switch, 'clear-done');
     assert.ok(done);
     assert.ok(running);
+    assert.ok(clear);
+    assert.equal(running.isPrimaryService, true);
+    assert.ok(running.linkedServices.includes(done));
+    assert.ok(running.linkedServices.includes(clear));
 
     const contact = done.getCharacteristic(hap.Characteristic.ContactSensorState);
     const occupancy = running.getCharacteristic(hap.Characteristic.OccupancyDetected);

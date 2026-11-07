@@ -49,18 +49,19 @@ export class LaundryAccessory {
       .setCharacteristic(Characteristic.Model, 'Power Plug Laundry')
       .setCharacteristic(Characteristic.SerialNumber, device.deviceId || device.identifier);
 
-    // Use subtype lookup so restored cached accessories are reused (not duplicated).
+    // One HomeKit device (like Home Connect): Running is the primary tile;
+    // Done + Clear Done are linked sensors inside that device.
+    this.runningService = this.accessory.getServiceById(Service.OccupancySensor, 'washer-running')
+      || this.accessory.addService(Service.OccupancySensor, device.name, 'washer-running');
+    this.runningService.setCharacteristic(Characteristic.Name, device.name);
+    this.runningService.getCharacteristic(Characteristic.OccupancyDetected)
+      .onGet(() => this.runningOccupancy());
+
     this.doneService = this.accessory.getServiceById(Service.ContactSensor, 'washer-done')
       || this.accessory.addService(Service.ContactSensor, `${device.name} Done`, 'washer-done');
     this.doneService.setCharacteristic(Characteristic.Name, `${device.name} Done`);
     this.doneService.getCharacteristic(Characteristic.ContactSensorState)
       .onGet(() => this.doneContactState());
-
-    this.runningService = this.accessory.getServiceById(Service.OccupancySensor, 'washer-running')
-      || this.accessory.addService(Service.OccupancySensor, `${device.name} Running`, 'washer-running');
-    this.runningService.setCharacteristic(Characteristic.Name, `${device.name} Running`);
-    this.runningService.getCharacteristic(Characteristic.OccupancyDetected)
-      .onGet(() => this.runningOccupancy());
 
     this.clearService = this.accessory.getServiceById(Service.Switch, 'clear-done')
       || this.accessory.addService(Service.Switch, `${device.name} Clear Done`, 'clear-done');
@@ -68,6 +69,10 @@ export class LaundryAccessory {
     this.clearService.getCharacteristic(Characteristic.On)
       .onGet(() => false)
       .onSet((value) => this.clearDone(value));
+
+    this.runningService.setPrimaryService(true);
+    this.runningService.addLinkedService(this.doneService);
+    this.runningService.addLinkedService(this.clearService);
 
     this.applySnapshot(this.snapshot, true);
 

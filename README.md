@@ -6,11 +6,13 @@ Apple Home does not show live watts. Eve can. This plugin reads Switcher wattage
 
 ## What you get in Home
 
-For each configured plug:
+For each configured plug, Home shows **one device** (named like the washer/dryer):
 
-- **Done** — contact sensor that opens when a cycle finishes (use this for notifications)
-- **Running** — occupancy sensor while the machine is drawing sustained power
-- **Clear Done** — momentary switch to close the done sensor without waiting for the next cycle
+- **Primary tile — Running** — occupancy; on while the machine draws sustained power
+- **Done** (inside the device) — contact sensor that opens when a cycle finishes (use for notifications)
+- **Clear Done** (inside the device) — momentary switch to close Done without waiting for the next cycle
+
+This mirrors the Home Connect “appliance + sensors” layout as closely as classic HomeKit allows.
 
 ## Install
 
