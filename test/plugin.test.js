@@ -79,14 +79,10 @@ test('HomeKit sensors follow running and done wattage thresholds', async () => {
     assert.equal(contact.value, hap.Characteristic.ContactSensorState.CONTACT_DETECTED);
     assert.equal(occupancy.value, hap.Characteristic.OccupancyDetected.OCCUPANCY_NOT_DETECTED);
 
-    const t0 = Date.now();
-    power.push(20);
-    // FakePowerSource does not accept timestamps; drive through the handler clock by
-    // replaying samples spaced with the detector's wall clock. Advance by feeding
-    // samples after real waits would be slow, so call the private path via a short
-    // delay simulation: emit many times after mutating Date is brittle. Instead,
-    // use the accessory ingest helper exposed for tests.
+    // Drive the detector with an explicit clock. Do not also emit through FakePowerSource
+    // here — that uses Date.now() and races the controlled timestamps below.
     const handler = platform.handlers[0];
+    const t0 = 1_700_000_000_000;
     handler.ingestWatts(20, t0);
     handler.ingestWatts(20, t0 + 2_000);
     assert.equal(occupancy.value, hap.Characteristic.OccupancyDetected.OCCUPANCY_DETECTED);
