@@ -2,7 +2,7 @@
   "pluginAlias": "SwitcherLaundry",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Watches a Switcher Power Plug and exposes HomeKit sensors when a laundry cycle finishes. Apple Home does not show live watts; this plugin listens to the same Switcher broadcasts Eve uses.",
+  "headerDisplay": "Watches a Switcher Power Plug and exposes HomeKit sensors when a laundry cycle finishes. Uses UDP broadcasts when free; if homebridge-switcher-platform already owns the Switcher UDP port, set deviceId so this plugin can poll watts over TCP instead.",
   "schema": {
     "type": "object",
     "properties": {
@@ -11,6 +11,21 @@
         "type": "string",
         "default": "Switcher Laundry",
         "required": true
+      },
+      "token": {
+        "title": "Switcher token (optional)",
+        "type": "string",
+        "description": "From https://switcher.co.il/GetKey/ — only needed if TCP poll login requires a token on your firmware.",
+        "x-schema-form": {
+          "type": "password"
+        }
+      },
+      "pollSeconds": {
+        "title": "TCP poll interval (seconds)",
+        "type": "integer",
+        "default": 10,
+        "minimum": 5,
+        "description": "Used only when UDP listen is unavailable and the plugin falls back to TCP status polling."
       },
       "devices": {
         "title": "Laundry devices",
@@ -29,7 +44,17 @@
               "title": "Switcher identifier",
               "type": "string",
               "required": true,
-              "description": "Device id, IP address, or exact name from the Switcher app / Homebridge Switcher plugin logs."
+              "description": "Device id, IP address, or exact name from the Switcher app / Switcher Platform logs."
+            },
+            "deviceId": {
+              "title": "Device ID (for TCP fallback)",
+              "type": "string",
+              "description": "Hex id from Switcher Platform logs (e.g. e4eaf6). Required if you also run homebridge-switcher-platform, because both plugins cannot bind UDP 20002."
+            },
+            "deviceIp": {
+              "title": "Device IP (optional)",
+              "type": "string",
+              "description": "Set if identifier is a name/id and you need TCP fallback. If identifier is already an IP, leave blank."
             },
             "startWatts": {
               "title": "Start threshold (W)",

@@ -2,7 +2,7 @@
 
 Homebridge plugin that watches a **Switcher Power Plug** and tells HomeKit when a washer or dryer finishes.
 
-Apple Home does not show live watts. Eve can. This plugin listens to the same local Switcher status broadcasts and turns power changes into sensors Home can automate.
+Apple Home does not show live watts. Eve can. This plugin reads Switcher wattage (UDP broadcast, or TCP poll if UDP is busy) and turns power changes into sensors Home can automate.
 
 ## What you get in Home
 
@@ -18,7 +18,7 @@ For each configured plug:
 sudo npm install -g homebridge-switcher-laundry
 ```
 
-Until the package is on npm, install from GitHub:
+Until the package is on npm:
 
 ```sh
 sudo npm install -g github:mirimalulkasif/hb-switcher-laundry
@@ -37,7 +37,8 @@ Restart Homebridge, then add **Switcher Laundry** from the Plugins page.
       "devices": [
         {
           "name": "Washing Machine",
-          "identifier": "e4eaf6",
+          "identifier": "192.168.68.90",
+          "deviceId": "e4eaf6",
           "startWatts": 5,
           "stopWatts": 2,
           "startSeconds": 60,
@@ -50,6 +51,12 @@ Restart Homebridge, then add **Switcher Laundry** from the Plugins page.
 ```
 
 `identifier` can be the Switcher device id, a static IP, or the exact device name from the Switcher app.
+
+### Running next to homebridge-switcher-platform
+
+Both plugins want Switcher UDP port **20002**. If Platform is already running, Laundry cannot listen and will fall back to **TCP polling**.
+
+For that fallback, set **`deviceId`** (hex id from Switcher Platform logs, e.g. `Found New Switcher ... | ID:e4eaf6`). If `identifier` is not the IP, also set **`deviceIp`**.
 
 ### Calibrating thresholds
 
@@ -65,8 +72,6 @@ Restart Homebridge, then add **Switcher Laundry** from the Plugins page.
 2. After a real start, power stays at or below `stopWatts` for `stopSeconds` → **done**
 3. The next sustained high-power stretch starts a new cycle and clears **done**
 
-The plug must stay on the same LAN as Homebridge. No cloud login is required for reading wattage from Power Plug broadcasts.
-
 ## Notifications
 
 In the Home app, create an automation:
@@ -79,8 +84,6 @@ In the Home app, create an automation:
 npm install
 npm test
 ```
-
-`npm test` compiles TypeScript and runs cycle-detection and HomeKit registration tests without a physical Switcher.
 
 ## License
 

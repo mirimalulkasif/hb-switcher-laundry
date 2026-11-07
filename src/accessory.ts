@@ -7,6 +7,8 @@ import type { PowerSample, PowerSource } from './switcher-power';
 export interface LaundryDeviceConfig {
   name: string;
   identifier: string;
+  deviceId?: string;
+  deviceIp?: string;
   startWatts: number;
   stopWatts: number;
   startSeconds: number;
@@ -45,21 +47,22 @@ export class LaundryAccessory {
     this.accessory.getService(Service.AccessoryInformation)
       ?.setCharacteristic(Characteristic.Manufacturer, 'Switcher')
       .setCharacteristic(Characteristic.Model, 'Power Plug Laundry')
-      .setCharacteristic(Characteristic.SerialNumber, device.identifier);
+      .setCharacteristic(Characteristic.SerialNumber, device.deviceId || device.identifier);
 
-    this.doneService = this.accessory.getService('Washer Done')
+    // Use subtype lookup so restored cached accessories are reused (not duplicated).
+    this.doneService = this.accessory.getServiceById(Service.ContactSensor, 'washer-done')
       || this.accessory.addService(Service.ContactSensor, `${device.name} Done`, 'washer-done');
     this.doneService.setCharacteristic(Characteristic.Name, `${device.name} Done`);
     this.doneService.getCharacteristic(Characteristic.ContactSensorState)
       .onGet(() => this.doneContactState());
 
-    this.runningService = this.accessory.getService('Washer Running')
+    this.runningService = this.accessory.getServiceById(Service.OccupancySensor, 'washer-running')
       || this.accessory.addService(Service.OccupancySensor, `${device.name} Running`, 'washer-running');
     this.runningService.setCharacteristic(Characteristic.Name, `${device.name} Running`);
     this.runningService.getCharacteristic(Characteristic.OccupancyDetected)
       .onGet(() => this.runningOccupancy());
 
-    this.clearService = this.accessory.getService('Clear Done')
+    this.clearService = this.accessory.getServiceById(Service.Switch, 'clear-done')
       || this.accessory.addService(Service.Switch, `${device.name} Clear Done`, 'clear-done');
     this.clearService.setCharacteristic(Characteristic.Name, `${device.name} Clear Done`);
     this.clearService.getCharacteristic(Characteristic.On)

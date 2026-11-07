@@ -17,7 +17,7 @@ import {
   PLATFORM_NAME,
   PLUGIN_NAME,
 } from './settings';
-import { SwitcherBroadcastPowerSource, type PowerSource } from './switcher-power';
+import { SwitcherPowerSource, type PowerSource } from './switcher-power';
 
 export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
   public readonly Service: typeof Service;
@@ -31,7 +31,14 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
     public readonly config: PlatformConfig,
     public readonly api: API,
     private readonly powerFactory: (device: LaundryDeviceConfig) => PowerSource = (device) =>
-      new SwitcherBroadcastPowerSource(device.identifier, (message) => this.log.debug(message)),
+      new SwitcherPowerSource({
+        identifier: device.identifier,
+        deviceId: device.deviceId,
+        deviceIp: device.deviceIp,
+        token: typeof this.config.token === 'string' ? this.config.token : undefined,
+        pollSeconds: Number(this.config.pollSeconds) || 10,
+        log: (message) => this.log.debug(message),
+      }),
   ) {
     this.Service = api.hap.Service;
     this.Characteristic = api.hap.Characteristic;
@@ -100,9 +107,13 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
       return null;
     }
     const name = String(item.name ?? identifier).trim() || identifier;
+    const deviceId = String(item.deviceId ?? '').trim() || undefined;
+    const deviceIp = String(item.deviceIp ?? '').trim() || undefined;
     return {
       name,
       identifier,
+      deviceId,
+      deviceIp,
       startWatts: positiveNumber(item.startWatts, DEFAULT_START_WATTS),
       stopWatts: positiveNumber(item.stopWatts, DEFAULT_STOP_WATTS),
       startSeconds: positiveNumber(item.startSeconds, DEFAULT_START_SECONDS),
