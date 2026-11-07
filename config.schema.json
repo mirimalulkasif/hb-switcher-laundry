@@ -49,12 +49,12 @@
             "deviceId": {
               "title": "Device ID (for TCP fallback)",
               "type": "string",
-              "description": "Hex id from Switcher Platform logs (e.g. e4eaf6). Required if you also run homebridge-switcher-platform, because both plugins cannot bind UDP 20002."
+              "description": "Hex id from Switcher Platform logs (e.g. e4eaf6). Required for each plug if you also run homebridge-switcher-platform (UDP 20002 busy). Washer and dryer each need their own id."
             },
             "deviceIp": {
               "title": "Device IP (optional)",
               "type": "string",
-              "description": "Set if identifier is a name/id and you need TCP fallback. If identifier is already an IP, leave blank."
+              "description": "Required with deviceId for TCP fallback when identifier is a name. Leave blank if identifier is already the plug IP."
             },
             "startWatts": {
               "title": "Start threshold (W)",

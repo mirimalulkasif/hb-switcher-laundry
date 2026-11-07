@@ -59,6 +59,83 @@ test('HomeKit sensors follow running and done wattage thresholds', async () => {
   }
 });
 
+test('matchesIdentifier accepts id, name, or ip', () => {
+  const { matchesIdentifier } = require('../dist/switcher-power');
+  const message = {
+    device_id: 'e4eaf6',
+    device_ip: '192.168.68.91',
+    name: 'Dryer Machine Plug',
+  };
+  assert.equal(matchesIdentifier('e4eaf6', message), true);
+  assert.equal(matchesIdentifier('Dryer Machine Plug', message), true);
+  assert.equal(matchesIdentifier('192.168.68.91', message), true);
+  assert.equal(matchesIdentifier('washer', message), false);
+});
+
+test('two laundry devices each get their own sensors', async () => {
+  const washerPower = new FakePowerSource();
+  const dryerPower = new FakePowerSource();
+  const powers = [washerPower, dryerPower];
+  let index = 0;
+
+  const accessories = [];
+  let launch = () => {};
+  let shutdown = () => {};
+  const api = {
+    hap,
+    platformAccessory: PlatformAccessory,
+    registerPlatformAccessories(_pluginName, _platformName, list) {
+      accessories.push(...list);
+    },
+    unregisterPlatformAccessories() {},
+    on(event, callback) {
+      if (event === 'didFinishLaunching') {
+        launch = callback;
+      }
+      if (event === 'shutdown') {
+        shutdown = callback;
+      }
+    },
+  };
+
+  const platform = new SwitcherLaundryPlatform({
+    info() {},
+    warn() {},
+    error() {},
+    debug() {},
+  }, {
+    name: 'Laundry',
+    devices: [
+      {
+        name: 'Washer',
+        identifier: 'washer1',
+        startWatts: 5,
+        stopWatts: 2,
+        startSeconds: 2,
+        stopSeconds: 3,
+      },
+      {
+        name: 'Dryer',
+        identifier: 'dryer1',
+        startWatts: 200,
+        stopWatts: 20,
+        startSeconds: 2,
+        stopSeconds: 3,
+      },
+    ],
+  }, api, () => powers[index++]);
+
+  try {
+    launch();
+    await platform.ready;
+    assert.equal(accessories.length, 2);
+    assert.ok(accessories[1].getServiceById(hap.Service.OccupancySensor, 'washer-running'));
+    assert.ok(accessories[1].getServiceById(hap.Service.ContactSensor, 'washer-done'));
+  } finally {
+    shutdown();
+  }
+});
+
 test('restoring a cached accessory does not duplicate services', async () => {
   const power = new FakePowerSource();
   const first = createHarness(power);

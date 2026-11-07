@@ -52,11 +52,22 @@ Restart Homebridge, then add **Switcher Laundry** from the Plugins page.
 
 `identifier` can be the Switcher device id, a static IP, or the exact device name from the Switcher app.
 
+### Washer + dryer (two plugs)
+
+Add **two** entries under `devices` — one per Switcher plug. Each gets its own Done / Running / Clear Done sensors in Home.
+
+v1.0.2+ shares one UDP listener across all laundry plugs. Older builds could only hear the first plug.
+
 ### Running next to homebridge-switcher-platform
 
-Both plugins want Switcher UDP port **20002**. If Platform is already running, Laundry cannot listen and will fall back to **TCP polling**.
+Both plugins want Switcher UDP port **20002**. If Platform is already running, Laundry falls back to **TCP polling**.
 
-For that fallback, set **`deviceId`** (hex id from Switcher Platform logs, e.g. `Found New Switcher ... | ID:e4eaf6`). If `identifier` is not the IP, also set **`deviceIp`**.
+For that fallback, **every** laundry device needs:
+
+- **`deviceId`** — hex id from Switcher Platform logs (e.g. `Found New Switcher ... | ID:e4eaf6`)
+- **`deviceIp`** — if `identifier` is not already the plug’s IP
+
+Missing `deviceId`/`deviceIp` on the dryer is the usual reason washer sensors move while dryer sensors stay idle.
 
 ### Calibrating thresholds
 

@@ -76,6 +76,15 @@ export class LaundryAccessory {
       this.platform.log.error(`[${device.name}] ${error.message}`);
     });
     this.power.start();
+
+    // If no watt samples arrive, HomeKit sensors stay idle forever — surface that clearly.
+    setTimeout(() => {
+      if (this.lastWatts === 0 && this.snapshot.phase === 'idle') {
+        this.platform.log.warn(
+          `[${device.name}] no power readings yet — check identifier/deviceId/deviceIp, or look for UDP/TCP errors above`,
+        );
+      }
+    }, 60_000);
   }
 
   stop(): void {

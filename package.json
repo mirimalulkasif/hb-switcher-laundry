@@ -1,7 +1,7 @@
 {
   "name": "homebridge-switcher-laundry",
   "displayName": "Switcher Laundry",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Detect when a washer or dryer finishes by watching a Switcher Power Plug wattage.",
   "license": "Apache-2.0",
   "author": "mirimalulkasif",

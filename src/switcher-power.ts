@@ -67,12 +67,115 @@ interface SwitcherMessage {
   };
 }
 
+type HubSubscriber = {
+  match: (message: SwitcherMessage) => boolean;
+  onMessage: (message: SwitcherMessage) => void;
+  onUdpFailed: (error: Error) => void;
+};
+
 /**
- * Prefers UDP broadcasts; if the Switcher UDP port is already taken
+ * One UDP bind for the whole plugin. Two laundry plugs cannot each call
+ * Switcher.listen() — the second hits EADDRINUSE and never sees watts.
+ */
+class SwitcherUdpHub {
+  private static shared?: SwitcherUdpHub;
+  private listener?: SwitcherListener;
+  private readonly subscribers = new Set<HubSubscriber>();
+  private started = false;
+  private failed = false;
+  private failError?: Error;
+
+  static get(): SwitcherUdpHub {
+    if (!SwitcherUdpHub.shared) {
+      SwitcherUdpHub.shared = new SwitcherUdpHub();
+    }
+    return SwitcherUdpHub.shared;
+  }
+
+  /** Test helper — reset between unit tests. */
+  static resetForTests(): void {
+    const hub = SwitcherUdpHub.shared;
+    if (hub) {
+      void hub.closeListener();
+      hub.subscribers.clear();
+      hub.started = false;
+      hub.failed = false;
+      hub.failError = undefined;
+    }
+    SwitcherUdpHub.shared = undefined;
+  }
+
+  subscribe(subscriber: HubSubscriber): void {
+    this.subscribers.add(subscriber);
+    if (this.failed && this.failError) {
+      subscriber.onUdpFailed(this.failError);
+      return;
+    }
+    this.ensureListening();
+  }
+
+  unsubscribe(subscriber: HubSubscriber): void {
+    this.subscribers.delete(subscriber);
+    if (this.subscribers.size === 0) {
+      void this.closeListener();
+      this.started = false;
+    }
+  }
+
+  private ensureListening(): void {
+    if (this.started || this.failed) {
+      return;
+    }
+    this.started = true;
+    try {
+      // No identifier filter — fan out to each laundry device by match().
+      this.listener = Switcher.listen((message) => {
+        // Keep library chatter at debug via first subscriber's logger if needed.
+        void message;
+      });
+      this.listener.on('error', (error) => {
+        this.failed = true;
+        this.failError = error;
+        void this.closeListener().then(() => {
+          for (const subscriber of [...this.subscribers]) {
+            subscriber.onUdpFailed(error);
+          }
+        });
+      });
+      this.listener.on('message', (message) => {
+        for (const subscriber of this.subscribers) {
+          if (subscriber.match(message)) {
+            subscriber.onMessage(message);
+          }
+        }
+      });
+    } catch (error) {
+      this.failed = true;
+      this.failError = error instanceof Error ? error : new Error(String(error));
+      for (const subscriber of [...this.subscribers]) {
+        subscriber.onUdpFailed(this.failError);
+      }
+    }
+  }
+
+  private async closeListener(): Promise<void> {
+    const closing = this.listener?.close();
+    this.listener = undefined;
+    if (closing && typeof (closing as Promise<void>).then === 'function') {
+      try {
+        await closing;
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
+
+/**
+ * Prefers shared UDP broadcasts; if the Switcher UDP port is already taken
  * (e.g. by homebridge-switcher-platform), falls back to TCP status polling.
  */
 export class SwitcherPowerSource extends EventEmitter implements PowerSource {
-  private listener?: SwitcherListener;
   private pollTimer?: ReturnType<typeof setInterval>;
   private device?: SwitcherDevice;
   private started = false;
@@ -80,6 +183,8 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
   private readonly pollSeconds: number;
   private resolvedId?: string;
   private resolvedIp?: string;
+  private hubSubscriber?: HubSubscriber;
+  private usingTcp = false;
 
   constructor(private readonly options: SwitcherPowerOptions) {
     super();
@@ -95,13 +200,9 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
     }
     this.started = true;
 
-    try {
-      this.listener = Switcher.listen((message) => this.log(message), this.options.identifier);
-      this.listener.on('error', (error) => {
-        this.log(`UDP listen failed (${error.message}); trying TCP poll fallback`);
-        void this.closeListener().then(() => this.startTcpPoll());
-      });
-      this.listener.on('message', (message) => {
+    this.hubSubscriber = {
+      match: (message) => matchesIdentifier(this.options.identifier, message),
+      onMessage: (message) => {
         this.resolvedId = message.device_id;
         this.resolvedIp = message.device_ip;
         this.handleWatts(
@@ -111,11 +212,13 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
           message.name,
           Number(message.state?.power) === 1,
         );
-      });
-    } catch (error) {
-      this.log(`UDP listen threw (${error instanceof Error ? error.message : String(error)}); trying TCP poll`);
-      this.startTcpPoll();
-    }
+      },
+      onUdpFailed: (error) => {
+        this.log(`UDP listen failed (${error.message}); trying TCP poll fallback`);
+        this.startTcpPoll();
+      },
+    };
+    SwitcherUdpHub.get().subscribe(this.hubSubscriber);
   }
 
   stop(): void {
@@ -123,6 +226,10 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
       return;
     }
     this.started = false;
+    if (this.hubSubscriber) {
+      SwitcherUdpHub.get().unsubscribe(this.hubSubscriber);
+      this.hubSubscriber = undefined;
+    }
     if (this.pollTimer) {
       clearInterval(this.pollTimer);
       this.pollTimer = undefined;
@@ -133,33 +240,21 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
       // ignore
     }
     this.device = undefined;
-    void this.closeListener();
-  }
-
-  private async closeListener(): Promise<void> {
-    const closing = this.listener?.close();
-    this.listener = undefined;
-    if (closing && typeof (closing as Promise<void>).then === 'function') {
-      try {
-        await closing;
-      } catch {
-        // ignore
-      }
-    }
   }
 
   private startTcpPoll(): void {
-    if (this.pollTimer || !this.started) {
+    if (this.pollTimer || this.usingTcp || !this.started) {
       return;
     }
     if (!this.resolvedId || !this.resolvedIp) {
       const error = new Error(
-        'UDP port busy (often homebridge-switcher-platform). Set deviceId (and deviceIp if needed) in the laundry device config to poll over TCP.',
+        `UDP port busy for "${this.options.identifier}". Set deviceId and deviceIp on this laundry device (from Switcher Platform logs) so watts can be polled over TCP.`,
       );
       this.emit('error', error);
       return;
     }
 
+    this.usingTcp = true;
     this.log(`Polling Switcher ${this.resolvedId} at ${this.resolvedIp} every ${this.pollSeconds}s over TCP`);
     this.device = new Switcher(
       this.resolvedId,
@@ -231,6 +326,20 @@ export class FakePowerSource extends EventEmitter implements PowerSource {
     } satisfies PowerSample);
   }
 }
+
+export function matchesIdentifier(identifier: string, message: SwitcherMessage): boolean {
+  const needle = identifier.trim().toLowerCase();
+  if (!needle) {
+    return false;
+  }
+  return (
+    message.device_id.toLowerCase() === needle
+    || message.name.toLowerCase() === needle
+    || message.device_ip === identifier.trim()
+  );
+}
+
+export { SwitcherUdpHub };
 
 function isIpAddress(value: string): boolean {
   return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value);
