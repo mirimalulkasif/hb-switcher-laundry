@@ -25,7 +25,7 @@
         "type": "integer",
         "default": 10,
         "minimum": 5,
-        "description": "Used only when UDP listen is unavailable and the plugin falls back to TCP status polling."
+        "description": "How often to ask each plug for watts over TCP when deviceId + deviceIp are set."
       },
       "devices": {
         "title": "Laundry devices",
@@ -47,14 +47,16 @@
               "description": "Device id, IP address, or exact name from the Switcher app / Switcher Platform logs."
             },
             "deviceId": {
-              "title": "Device ID (for TCP fallback)",
+              "title": "Device ID (required for TCP)",
               "type": "string",
-              "description": "Hex id from Switcher Platform logs (e.g. e4eaf6). Required for each plug if you also run homebridge-switcher-platform (UDP 20002 busy). Washer and dryer each need their own id."
+              "required": true,
+              "description": "Hex id from Switcher Platform logs (e.g. e4eaf6). Required for washer and dryer when Switcher Platform is installed."
             },
             "deviceIp": {
-              "title": "Device IP (optional)",
+              "title": "Device IP (required for TCP)",
               "type": "string",
-              "description": "Required with deviceId for TCP fallback when identifier is a name. Leave blank if identifier is already the plug IP."
+              "required": true,
+              "description": "Plug IP from Switcher Platform logs. Required together with Device ID."
             },
             "startWatts": {
               "title": "Start threshold (W)",

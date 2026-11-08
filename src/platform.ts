@@ -37,7 +37,9 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
         deviceIp: device.deviceIp,
         token: typeof this.config.token === 'string' ? this.config.token : undefined,
         pollSeconds: Number(this.config.pollSeconds) || 10,
-        log: (message) => this.log.debug(message),
+        // Operational power-source lines must be visible (debug hides "TCP mode" / errors).
+        log: (message) => this.log.info(message),
+        debugLog: (message) => this.log.debug(message),
       }),
   ) {
     this.Service = api.hap.Service;
@@ -80,9 +82,18 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
       if (!existing) {
         this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
       }
+      const tcpReady = Boolean(device.deviceId && device.deviceIp);
       this.log.info(
-        `Watching ${device.name} (${device.identifier}) start≥${device.startWatts}W/${device.startSeconds}s stop≤${device.stopWatts}W/${device.stopSeconds}s`,
+        `Watching ${device.name} (${device.identifier}) start≥${device.startWatts}W/${device.startSeconds}s stop≤${device.stopWatts}W/${device.stopSeconds}s`
+          + (tcpReady
+            ? ` TCP id=${device.deviceId} ip=${device.deviceIp}`
+            : ' WARNING: deviceId/deviceIp missing — TCP disabled'),
       );
+      if (!tcpReady) {
+        this.log.error(
+          `[${device.name}] Set Device ID and Device IP from Switcher Platform logs (Found New Switcher … | ID:… | IP:…). Name alone is not enough while Platform owns UDP.`,
+        );
+      }
     }
 
     const stale = this.cachedAccessories.filter((item) => !activeIds.has(item.UUID));
@@ -109,8 +120,9 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
       return null;
     }
     const name = String(item.name ?? identifier).trim() || identifier;
-    const deviceId = String(item.deviceId ?? '').trim() || undefined;
-    const deviceIp = String(item.deviceIp ?? '').trim() || undefined;
+    // Accept common aliases in case config was edited by hand.
+    const deviceId = String(item.deviceId ?? item.device_id ?? item.id ?? '').trim() || undefined;
+    const deviceIp = String(item.deviceIp ?? item.device_ip ?? item.ip ?? '').trim() || undefined;
     return {
       name,
       identifier,

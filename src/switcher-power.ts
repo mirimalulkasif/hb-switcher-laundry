@@ -48,6 +48,7 @@ export interface SwitcherPowerOptions {
   token?: string;
   pollSeconds?: number;
   log?: (message: string) => void;
+  debugLog?: (message: string) => void;
 }
 
 interface SwitcherListener {
@@ -128,11 +129,7 @@ class SwitcherUdpHub {
     }
     this.started = true;
     try {
-      // No identifier filter — fan out to each laundry device by match().
-      this.listener = Switcher.listen((message) => {
-        // Keep library chatter at debug via first subscriber's logger if needed.
-        void message;
-      });
+      this.listener = Switcher.listen(() => undefined);
       this.listener.on('error', (error) => {
         this.failed = true;
         this.failError = error;
@@ -173,24 +170,26 @@ class SwitcherUdpHub {
 
 /**
  * Reads watts from the Switcher plug over the LAN.
- * When deviceId + IP are set, TCP status polling is primary (reliable next to
- * homebridge-switcher-platform). Shared UDP is optional extra.
- * Eve/HomeKit energy history is unrelated — this talks to the plug directly.
+ * With deviceId + IP: TCP-only (recommended next to homebridge-switcher-platform).
+ * Without: shared UDP listen only.
  */
 export class SwitcherPowerSource extends EventEmitter implements PowerSource {
   private pollTimer?: ReturnType<typeof setInterval>;
   private device?: SwitcherDevice;
   private started = false;
   private readonly log: (message: string) => void;
+  private readonly debugLog: (message: string) => void;
   private readonly pollSeconds: number;
   private resolvedId?: string;
   private resolvedIp?: string;
   private hubSubscriber?: HubSubscriber;
   private usingTcp = false;
+  private loggedBadStatus = false;
 
   constructor(private readonly options: SwitcherPowerOptions) {
     super();
     this.log = options.log || (() => undefined);
+    this.debugLog = options.debugLog || this.log;
     this.pollSeconds = Math.max(5, options.pollSeconds || 10);
     this.resolvedId = options.deviceId || (isDeviceId(options.identifier) ? options.identifier : undefined);
     this.resolvedIp = options.deviceIp || (isIpAddress(options.identifier) ? options.identifier : undefined);
@@ -202,11 +201,17 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
     }
     this.started = true;
 
-    // Prefer TCP whenever we already know id+ip — do not wait for UDP to fail.
-    // UDP can look "fine" (socket bound) while this plug never matches / stops broadcasting.
     if (this.resolvedId && this.resolvedIp) {
+      this.log(
+        `TCP mode for "${this.options.identifier}" → id=${this.resolvedId} ip=${this.resolvedIp} every ${this.pollSeconds}s`,
+      );
       this.startTcpPoll();
+      return;
     }
+
+    this.log(
+      `UDP mode for "${this.options.identifier}" (deviceId/deviceIp missing — set both for reliable TCP next to Switcher Platform)`,
+    );
 
     this.hubSubscriber = {
       match: (message) => this.matchesMessage(message),
@@ -222,10 +227,13 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
         );
       },
       onUdpFailed: (error) => {
-        this.log(`UDP listen failed (${error.message})`);
-        if (!this.usingTcp) {
-          this.startTcpPoll();
-        }
+        this.log(`UDP listen failed (${error.message}); cannot poll TCP without deviceId+deviceIp`);
+        this.emit(
+          'error',
+          new Error(
+            `UDP busy and deviceId/deviceIp not set for "${this.options.identifier}". Add both from Switcher Platform logs.`,
+          ),
+        );
       },
     };
     SwitcherUdpHub.get().subscribe(this.hubSubscriber);
@@ -272,19 +280,20 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
       return;
     }
     if (!this.resolvedId || !this.resolvedIp) {
-      const error = new Error(
-        `UDP port busy for "${this.options.identifier}". Set deviceId and deviceIp on this laundry device (from Switcher Platform logs) so watts can be polled over TCP.`,
+      this.emit(
+        'error',
+        new Error(
+          `Cannot TCP-poll "${this.options.identifier}" — need deviceId and deviceIp`,
+        ),
       );
-      this.emit('error', error);
       return;
     }
 
     this.usingTcp = true;
-    this.log(`Polling Switcher ${this.resolvedId} at ${this.resolvedIp} every ${this.pollSeconds}s over TCP`);
     this.device = new Switcher(
       this.resolvedId,
       this.resolvedIp,
-      (message) => this.log(message),
+      (message) => this.debugLog(message),
       false,
       'power_plug',
       undefined,
@@ -294,8 +303,16 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
     const tick = () => {
       void this.device?.status()
         .then((status) => {
+          const watts = Number(status.power_consumption);
+          if (!Number.isFinite(watts)) {
+            if (!this.loggedBadStatus) {
+              this.loggedBadStatus = true;
+              this.log(`TCP status missing watts: ${JSON.stringify(status)}`);
+            }
+            return;
+          }
           this.handleWatts(
-            Number(status.power_consumption),
+            watts,
             this.resolvedId || this.options.identifier,
             this.resolvedIp || '0.0.0.0',
             this.options.identifier,

@@ -66,12 +66,12 @@ v1.0.2+ shares one UDP listener across all laundry plugs. Older builds could onl
 
 Both plugins want Switcher UDP port **20002**. If Platform is already running, Laundry falls back to **TCP polling**.
 
-For that fallback, **every** laundry device needs:
+**Every** laundry device should set both (required when Switcher Platform is installed):
 
 - **`deviceId`** — hex id from Switcher Platform logs (e.g. `Found New Switcher ... | ID:e4eaf6`)
-- **`deviceIp`** — if `identifier` is not already the plug’s IP
+- **`deviceIp`** — IP from those same logs
 
-Missing `deviceId`/`deviceIp` on the dryer is the usual reason washer sensors move while dryer sensors stay idle.
+After restart, logs must show `TCP mode for "…" → id=… ip=…`. If you see `WARNING: deviceId/deviceIp missing`, the UI fields were not saved into `config.json`.
 
 ### Calibrating thresholds
 
