@@ -70,9 +70,17 @@ Both plugins want Switcher UDP port **20002**. If Platform is already running, L
 
 - **`deviceId`** — hex id from Switcher Platform logs (e.g. `Found New Switcher ... | ID:e4eaf6`)
 - **`deviceIp`** — IP from those same logs
-- **`deviceKey`** — login key from discovery (usually `00`). Without it, TCP status times out.
+- **`deviceKey`** — copy `device_key` from Switcher Platform logs (e.g. `04`, `05`). **Wrong key → TCP status times out.**
 
-After restart, logs must show `TCP mode …` then `TCP status ok … power_consumption`. Timeouts usually mean wrong key/IP or the plug is unreachable on port **9957**.
+Example from Platform logs:
+
+```text
+device_id: '2d3f22', device_ip: '192.168.68.79', device_key: '05', name: 'Dryer Machine Plug'
+```
+
+→ laundry config: `deviceId: "2d3f22"`, `deviceIp: "192.168.68.79"`, `deviceKey: "05"`.
+
+After restart, logs must show `TCP connect … key=05` then `TCP status ok … power_consumption`. Timeouts usually mean wrong **deviceKey**/IP or the plug is unreachable on port **9957**.
 
 ### Calibrating thresholds
 

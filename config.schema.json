@@ -61,8 +61,8 @@
             "deviceKey": {
               "title": "Device key (TCP login)",
               "type": "string",
-              "default": "00",
-              "description": "Switcher login key from discovery logs (often 00). Without this, TCP status times out."
+              "required": true,
+              "description": "Copy device_key from Switcher Platform logs (e.g. 04 or 05). Wrong key → TCP status times out."
             },
             "startWatts": {
               "title": "Start threshold (W)",

@@ -124,7 +124,10 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
     // Accept common aliases in case config was edited by hand.
     const deviceId = String(item.deviceId ?? item.device_id ?? item.id ?? '').trim() || undefined;
     const deviceIp = String(item.deviceIp ?? item.device_ip ?? item.ip ?? '').trim() || undefined;
-    const deviceKey = String(item.deviceKey ?? item.device_key ?? item.key ?? '00').trim() || '00';
+    const rawKey = item.deviceKey ?? item.device_key ?? item.key;
+    const deviceKey = rawKey != null && String(rawKey).trim()
+      ? String(rawKey).trim()
+      : undefined;
     return {
       name,
       identifier,

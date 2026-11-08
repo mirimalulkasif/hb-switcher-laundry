@@ -47,7 +47,7 @@ export interface SwitcherPowerOptions {
   identifier: string;
   deviceId?: string;
   deviceIp?: string;
-  /** Login key from Switcher discovery (often "00"). Required for TCP status. */
+  /** Login key from Switcher Platform logs (`device_key`, e.g. "04" / "05"). Required for TCP. */
   deviceKey?: string;
   token?: string;
   pollSeconds?: number;
@@ -65,6 +65,7 @@ interface SwitcherMessage {
   device_id: string;
   device_ip: string;
   name: string;
+  device_key?: string;
   type?: string;
   state?: {
     power?: number;
@@ -191,6 +192,8 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
   private loggedBadStatus = false;
   private loggedFirstStatus = false;
   private consecutiveFailures = 0;
+  private resolvedKey?: string;
+  private keyFromConfig = false;
 
   constructor(private readonly options: SwitcherPowerOptions) {
     super();
@@ -199,6 +202,11 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
     this.pollSeconds = Math.max(5, options.pollSeconds || 10);
     this.resolvedId = options.deviceId || (isDeviceId(options.identifier) ? options.identifier : undefined);
     this.resolvedIp = options.deviceIp || (isIpAddress(options.identifier) ? options.identifier : undefined);
+    const configuredKey = options.deviceKey?.trim();
+    if (configuredKey) {
+      this.resolvedKey = configuredKey;
+      this.keyFromConfig = true;
+    }
   }
 
   start(): void {
@@ -224,6 +232,9 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
       onMessage: (message) => {
         this.resolvedId = message.device_id;
         this.resolvedIp = message.device_ip;
+        if (message.device_key && !this.keyFromConfig) {
+          this.resolvedKey = message.device_key;
+        }
         this.handleWatts(
           Number(message.state?.power_consumption),
           message.device_id,
@@ -296,9 +307,15 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
     }
 
     this.usingTcp = true;
-    // aioswitcher/switcher-js2 login for power plugs requires device_key (often "00").
-    // Omitting it produces a broken login packet and status() hangs until timeout.
-    const deviceKey = (this.options.deviceKey || '00').trim() || '00';
+    // Login packet embeds device_key. Wrong key → plug ignores login → status times out.
+    // Copy `device_key` from Switcher Platform logs (yours may be 04/05, not 00).
+    const deviceKey = (this.resolvedKey || this.options.deviceKey || '00').trim() || '00';
+    this.resolvedKey = deviceKey;
+    if (!this.keyFromConfig && deviceKey === '00') {
+      this.log(
+        `WARNING: deviceKey not set for ${this.resolvedId} — trying "00". If TCP times out, copy device_key from Switcher Platform logs into laundry deviceKey.`,
+      );
+    }
     this.log(
       `TCP connect ${this.resolvedId} @ ${this.resolvedIp}:9957 type=power_plug key=${deviceKey}`,
     );
@@ -426,7 +443,11 @@ function isDeviceId(value: string): boolean {
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error(`${label} timed out after ${ms}ms — check deviceId/IP/token and that the plug is reachable`));
+      reject(
+        new Error(
+          `${label} timed out after ${ms}ms — check deviceId/IP/deviceKey (from Platform device_key) and that the plug is reachable on TCP 9957`,
+        ),
+      );
     }, ms);
     promise.then(
       (value) => {
