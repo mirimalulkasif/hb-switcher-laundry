@@ -2,7 +2,9 @@
 
 Homebridge plugin that watches a **Switcher Power Plug** and tells HomeKit when a washer or dryer finishes.
 
-Apple Home does not show live watts. Eve can. This plugin reads Switcher wattage (UDP broadcast, or TCP poll if UDP is busy) and turns power changes into sensors Home can automate.
+Apple Home does not show live watts. Eve can — but Eve only mirrors HomeKit energy history and can go stale. This plugin reads the Switcher plug **directly** over your LAN (TCP status poll when `deviceId` + `deviceIp` are set, plus optional UDP) and turns power into sensors Home can automate.
+
+If Eve freezes but the **Switcher app** still shows live watts, laundry TCP polling should still work. If the Switcher app is also stuck, fix Wi‑Fi / the plug first.
 
 ## What you get in Home
 

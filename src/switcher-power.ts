@@ -172,8 +172,10 @@ class SwitcherUdpHub {
 }
 
 /**
- * Prefers shared UDP broadcasts; if the Switcher UDP port is already taken
- * (e.g. by homebridge-switcher-platform), falls back to TCP status polling.
+ * Reads watts from the Switcher plug over the LAN.
+ * When deviceId + IP are set, TCP status polling is primary (reliable next to
+ * homebridge-switcher-platform). Shared UDP is optional extra.
+ * Eve/HomeKit energy history is unrelated — this talks to the plug directly.
  */
 export class SwitcherPowerSource extends EventEmitter implements PowerSource {
   private pollTimer?: ReturnType<typeof setInterval>;
@@ -200,8 +202,14 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
     }
     this.started = true;
 
+    // Prefer TCP whenever we already know id+ip — do not wait for UDP to fail.
+    // UDP can look "fine" (socket bound) while this plug never matches / stops broadcasting.
+    if (this.resolvedId && this.resolvedIp) {
+      this.startTcpPoll();
+    }
+
     this.hubSubscriber = {
-      match: (message) => matchesIdentifier(this.options.identifier, message),
+      match: (message) => this.matchesMessage(message),
       onMessage: (message) => {
         this.resolvedId = message.device_id;
         this.resolvedIp = message.device_ip;
@@ -214,11 +222,28 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
         );
       },
       onUdpFailed: (error) => {
-        this.log(`UDP listen failed (${error.message}); trying TCP poll fallback`);
-        this.startTcpPoll();
+        this.log(`UDP listen failed (${error.message})`);
+        if (!this.usingTcp) {
+          this.startTcpPoll();
+        }
       },
     };
     SwitcherUdpHub.get().subscribe(this.hubSubscriber);
+  }
+
+  private matchesMessage(message: SwitcherMessage): boolean {
+    if (matchesIdentifier(this.options.identifier, message)) {
+      return true;
+    }
+    const id = this.options.deviceId?.trim().toLowerCase();
+    if (id && message.device_id.toLowerCase() === id) {
+      return true;
+    }
+    const ip = this.options.deviceIp?.trim();
+    if (ip && message.device_ip === ip) {
+      return true;
+    }
+    return false;
   }
 
   stop(): void {

@@ -2,7 +2,7 @@
   "pluginAlias": "SwitcherLaundry",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Watches a Switcher Power Plug and exposes HomeKit sensors when a laundry cycle finishes. Uses UDP broadcasts when free; if homebridge-switcher-platform already owns the Switcher UDP port, set deviceId so this plugin can poll watts over TCP instead.",
+  "headerDisplay": "Watches a Switcher Power Plug and exposes HomeKit sensors when a laundry cycle finishes. Set deviceId + deviceIp on each plug so watts are polled over TCP (recommended). Does not use Eve — talks to the Switcher on your LAN.",
   "schema": {
     "type": "object",
     "properties": {

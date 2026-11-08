@@ -21,6 +21,7 @@ export class LaundryAccessory {
   private readonly clearService: Service;
   private readonly detector: LaundryCycleDetector;
   private lastWatts = 0;
+  private lastLoggedWattsAt = 0;
   private snapshot: CycleSnapshot = {
     phase: 'idle',
     watts: 0,
@@ -112,12 +113,18 @@ export class LaundryAccessory {
   }
 
   private onPower(sample: PowerSample, now = Date.now()): CycleSnapshot {
+    const previousWatts = this.lastWatts;
     this.lastWatts = sample.watts;
     const next = this.detector.update(sample.watts, now);
     if (next.changed) {
       this.platform.log.info(
         `[${this.device.name}] ${next.phase} at ${sample.watts} W`,
       );
+      this.lastLoggedWattsAt = now;
+    } else if (Math.abs(sample.watts - previousWatts) >= 5 || now - this.lastLoggedWattsAt >= 60_000) {
+      // Heartbeat so logs prove TCP/UDP samples keep arriving (Eve can be stale).
+      this.platform.log.info(`[${this.device.name}] ${sample.watts} W (${next.phase})`);
+      this.lastLoggedWattsAt = now;
     } else {
       this.platform.log.debug(`[${this.device.name}] ${sample.watts} W (${next.phase})`);
     }
