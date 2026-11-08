@@ -66,12 +66,13 @@ v1.0.2+ shares one UDP listener across all laundry plugs. Older builds could onl
 
 Both plugins want Switcher UDP port **20002**. If Platform is already running, Laundry falls back to **TCP polling**.
 
-**Every** laundry device should set both (required when Switcher Platform is installed):
+**Every** laundry device should set (required when Switcher Platform is installed):
 
 - **`deviceId`** — hex id from Switcher Platform logs (e.g. `Found New Switcher ... | ID:e4eaf6`)
 - **`deviceIp`** — IP from those same logs
+- **`deviceKey`** — login key from discovery (usually `00`). Without it, TCP status times out.
 
-After restart, logs must show `TCP mode for "…" → id=… ip=…`. If you see `WARNING: deviceId/deviceIp missing`, the UI fields were not saved into `config.json`.
+After restart, logs must show `TCP mode …` then `TCP status ok … power_consumption`. Timeouts usually mean wrong key/IP or the plug is unreachable on port **9957**.
 
 ### Calibrating thresholds
 

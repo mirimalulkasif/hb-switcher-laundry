@@ -9,6 +9,7 @@ export interface LaundryDeviceConfig {
   identifier: string;
   deviceId?: string;
   deviceIp?: string;
+  deviceKey?: string;
   startWatts: number;
   stopWatts: number;
   startSeconds: number;

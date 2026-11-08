@@ -35,6 +35,7 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
         identifier: device.identifier,
         deviceId: device.deviceId,
         deviceIp: device.deviceIp,
+        deviceKey: device.deviceKey,
         token: typeof this.config.token === 'string' ? this.config.token : undefined,
         pollSeconds: Number(this.config.pollSeconds) || 10,
         // Operational power-source lines must be visible (debug hides "TCP mode" / errors).
@@ -123,11 +124,13 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
     // Accept common aliases in case config was edited by hand.
     const deviceId = String(item.deviceId ?? item.device_id ?? item.id ?? '').trim() || undefined;
     const deviceIp = String(item.deviceIp ?? item.device_ip ?? item.ip ?? '').trim() || undefined;
+    const deviceKey = String(item.deviceKey ?? item.device_key ?? item.key ?? '00').trim() || '00';
     return {
       name,
       identifier,
       deviceId,
       deviceIp,
+      deviceKey,
       startWatts: positiveNumber(item.startWatts, DEFAULT_START_WATTS),
       stopWatts: positiveNumber(item.stopWatts, DEFAULT_STOP_WATTS),
       startSeconds: positiveNumber(item.startSeconds, DEFAULT_START_SECONDS),

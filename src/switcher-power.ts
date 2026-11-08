@@ -13,6 +13,7 @@ interface SwitcherModule {
     deviceType?: string,
     remote?: unknown,
     token?: string,
+    key?: string,
   ): SwitcherDevice;
 }
 
@@ -21,6 +22,7 @@ interface SwitcherDevice {
     power?: number | string;
     power_consumption?: number;
   }>;
+  update_device_key?: (key: string) => void;
   close?: () => void;
 }
 
@@ -45,6 +47,8 @@ export interface SwitcherPowerOptions {
   identifier: string;
   deviceId?: string;
   deviceIp?: string;
+  /** Login key from Switcher discovery (often "00"). Required for TCP status. */
+  deviceKey?: string;
   token?: string;
   pollSeconds?: number;
   log?: (message: string) => void;
@@ -292,6 +296,12 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
     }
 
     this.usingTcp = true;
+    // aioswitcher/switcher-js2 login for power plugs requires device_key (often "00").
+    // Omitting it produces a broken login packet and status() hangs until timeout.
+    const deviceKey = (this.options.deviceKey || '00').trim() || '00';
+    this.log(
+      `TCP connect ${this.resolvedId} @ ${this.resolvedIp}:9957 type=power_plug key=${deviceKey}`,
+    );
     this.device = new Switcher(
       this.resolvedId,
       this.resolvedIp,
@@ -300,7 +310,10 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
       'power_plug',
       undefined,
       this.options.token,
+      deviceKey,
     );
+    // Belt-and-suspenders: discover() historically stuffed the key into the token slot.
+    this.device.update_device_key?.(deviceKey);
 
     const tick = () => {
       void this.pollOnce();
