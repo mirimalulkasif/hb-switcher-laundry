@@ -185,6 +185,8 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
   private hubSubscriber?: HubSubscriber;
   private usingTcp = false;
   private loggedBadStatus = false;
+  private loggedFirstStatus = false;
+  private consecutiveFailures = 0;
 
   constructor(private readonly options: SwitcherPowerOptions) {
     super();
@@ -301,31 +303,48 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
     );
 
     const tick = () => {
-      void this.device?.status()
-        .then((status) => {
-          const watts = Number(status.power_consumption);
-          if (!Number.isFinite(watts)) {
-            if (!this.loggedBadStatus) {
-              this.loggedBadStatus = true;
-              this.log(`TCP status missing watts: ${JSON.stringify(status)}`);
-            }
-            return;
-          }
-          this.handleWatts(
-            watts,
-            this.resolvedId || this.options.identifier,
-            this.resolvedIp || '0.0.0.0',
-            this.options.identifier,
-            Number(status.power) === 1 || status.power === 'ON',
-          );
-        })
-        .catch((error: unknown) => {
-          this.emit('error', error instanceof Error ? error : new Error(String(error)));
-        });
+      void this.pollOnce();
     };
 
     tick();
     this.pollTimer = setInterval(tick, this.pollSeconds * 1000);
+  }
+
+  private async pollOnce(): Promise<void> {
+    if (!this.device) {
+      return;
+    }
+    try {
+      const status = await withTimeout(this.device.status(), 8_000, 'Switcher TCP status');
+      this.consecutiveFailures = 0;
+      const watts = Number(status.power_consumption);
+      if (!this.loggedFirstStatus) {
+        this.loggedFirstStatus = true;
+        this.log(`TCP status ok for ${this.resolvedId}: ${JSON.stringify(status)}`);
+      }
+      if (!Number.isFinite(watts)) {
+        if (!this.loggedBadStatus) {
+          this.loggedBadStatus = true;
+          this.log(`TCP status missing watts: ${JSON.stringify(status)}`);
+        }
+        return;
+      }
+      this.handleWatts(
+        watts,
+        this.resolvedId || this.options.identifier,
+        this.resolvedIp || '0.0.0.0',
+        this.options.identifier,
+        Number(status.power) === 1 || status.power === 'ON',
+      );
+    } catch (error: unknown) {
+      this.consecutiveFailures += 1;
+      const message = error instanceof Error ? error.message : String(error);
+      // Always surface the first few failures at info — silent hangs were hard to debug.
+      if (this.consecutiveFailures <= 3 || this.consecutiveFailures % 6 === 0) {
+        this.log(`TCP poll failed for ${this.resolvedId} @ ${this.resolvedIp}: ${message}`);
+      }
+      this.emit('error', error instanceof Error ? error : new Error(message));
+    }
   }
 
   private handleWatts(
@@ -389,4 +408,22 @@ function isIpAddress(value: string): boolean {
 
 function isDeviceId(value: string): boolean {
   return /^[a-f0-9]{6,}$/i.test(value);
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms — check deviceId/IP/token and that the plug is reachable`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 }
