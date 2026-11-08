@@ -124,7 +124,8 @@ export class LaundryAccessory {
       this.lastLoggedWattsAt = now;
     } else if (Math.abs(sample.watts - previousWatts) >= 5 || now - this.lastLoggedWattsAt >= 60_000) {
       // Heartbeat so logs prove TCP/UDP samples keep arriving (Eve can be stale).
-      this.platform.log.info(`[${this.device.name}] ${sample.watts} W (${next.phase})`);
+      // "idle" at high watts is normal until startSeconds elapses — label that clearly.
+      this.platform.log.info(`[${this.device.name}] ${sample.watts} W (${this.phaseLabel(next.phase, sample.watts)})`);
       this.lastLoggedWattsAt = now;
     } else {
       this.platform.log.debug(`[${this.device.name}] ${sample.watts} W (${next.phase})`);
@@ -169,5 +170,15 @@ export class LaundryAccessory {
     return this.snapshot.running
       ? Characteristic.OccupancyDetected.OCCUPANCY_DETECTED
       : Characteristic.OccupancyDetected.OCCUPANCY_NOT_DETECTED;
+  }
+
+  private phaseLabel(phase: CycleSnapshot['phase'], watts: number): string {
+    if (phase === 'idle' && watts >= this.device.startWatts) {
+      return `warming ≥${this.device.startWatts}W for ${this.device.startSeconds}s`;
+    }
+    if (phase === 'running' && watts <= this.device.stopWatts) {
+      return `stopping ≤${this.device.stopWatts}W for ${this.device.stopSeconds}s`;
+    }
+    return phase;
   }
 }

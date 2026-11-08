@@ -1,7 +1,11 @@
+import { createSocket, type Socket } from 'node:dgram';
 import { EventEmitter } from 'node:events';
 
 // switcher-js2 ships as CommonJS without TypeScript types.
 const Switcher = require('switcher-js2') as SwitcherModule;
+
+/** Switcher plugs broadcast status on these UDP ports (~every 4s). */
+const SWITCHER_UDP_PORTS = [20002, 20003, 10002, 10003];
 
 interface SwitcherModule {
   listen: (log: (message: string) => void, identifier?: string) => SwitcherListener;
@@ -173,6 +177,127 @@ class SwitcherUdpHub {
   }
 }
 
+type KeyListener = (deviceId: string, deviceIp: string, deviceKey: string) => void;
+
+/**
+ * Learn device_key from Switcher UDP broadcasts while Platform also binds the
+ * same ports (reuseAddr). Exclusive Switcher.listen() would hit EADDRINUSE.
+ */
+class DeviceKeySniffer {
+  private static shared?: DeviceKeySniffer;
+  private readonly sockets: Socket[] = [];
+  private readonly listeners = new Set<KeyListener>();
+  private readonly byId = new Map<string, string>();
+  private readonly byIp = new Map<string, string>();
+  private started = false;
+
+  static get(): DeviceKeySniffer {
+    if (!DeviceKeySniffer.shared) {
+      DeviceKeySniffer.shared = new DeviceKeySniffer();
+    }
+    return DeviceKeySniffer.shared;
+  }
+
+  static resetForTests(): void {
+    const sniffer = DeviceKeySniffer.shared;
+    if (sniffer) {
+      sniffer.stop();
+    }
+    DeviceKeySniffer.shared = undefined;
+  }
+
+  onKey(listener: KeyListener): void {
+    this.listeners.add(listener);
+    this.ensureListening();
+    for (const [deviceId, deviceKey] of this.byId) {
+      listener(deviceId, '', deviceKey);
+    }
+  }
+
+  offKey(listener: KeyListener): void {
+    this.listeners.delete(listener);
+    if (this.listeners.size === 0) {
+      this.stop();
+    }
+  }
+
+  lookup(deviceId?: string, deviceIp?: string): string | undefined {
+    if (deviceId) {
+      const byId = this.byId.get(deviceId.toLowerCase());
+      if (byId) {
+        return byId;
+      }
+    }
+    if (deviceIp) {
+      return this.byIp.get(deviceIp);
+    }
+    return undefined;
+  }
+
+  private ensureListening(): void {
+    if (this.started) {
+      return;
+    }
+    this.started = true;
+    for (const port of SWITCHER_UDP_PORTS) {
+      const socket = createSocket({ type: 'udp4', reuseAddr: true });
+      socket.on('error', () => {
+        // Port may be exclusive on some hosts — other ports may still work.
+      });
+      socket.on('message', (msg, rinfo) => this.handleMessage(msg, rinfo.address));
+      try {
+        socket.bind(port);
+        this.sockets.push(socket);
+      } catch {
+        try {
+          socket.close();
+        } catch {
+          // ignore
+        }
+      }
+    }
+  }
+
+  private handleMessage(msg: Buffer, fromIp: string): void {
+    if (!Buffer.isBuffer(msg) || msg.toString('hex').slice(0, 4) !== 'fef0') {
+      return;
+    }
+    if (msg.length < 42) {
+      return;
+    }
+    // Same offsets as switcher-js2 SwitcherUDPMessage / aioswitcher.
+    const deviceId = msg.toString('hex').slice(36, 42);
+    const deviceKey = msg.toString('hex').slice(80, 82);
+    if (!/^[a-f0-9]{6}$/i.test(deviceId) || !/^[a-f0-9]{2}$/i.test(deviceKey)) {
+      return;
+    }
+    const id = deviceId.toLowerCase();
+    const prev = this.byId.get(id);
+    this.byId.set(id, deviceKey);
+    this.byIp.set(fromIp, deviceKey);
+    if (prev === deviceKey) {
+      return;
+    }
+    for (const listener of this.listeners) {
+      listener(id, fromIp, deviceKey);
+    }
+  }
+
+  private stop(): void {
+    for (const socket of this.sockets) {
+      try {
+        socket.close();
+      } catch {
+        // ignore
+      }
+    }
+    this.sockets.length = 0;
+    this.started = false;
+    this.byId.clear();
+    this.byIp.clear();
+  }
+}
+
 /**
  * Reads watts from the Switcher plug over the LAN.
  * With deviceId + IP: TCP-only (recommended next to homebridge-switcher-platform).
@@ -194,6 +319,8 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
   private consecutiveFailures = 0;
   private resolvedKey?: string;
   private keyFromConfig = false;
+  private keyListener?: KeyListener;
+  private tcpStarted = false;
 
   constructor(private readonly options: SwitcherPowerOptions) {
     super();
@@ -219,6 +346,9 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
       this.log(
         `TCP mode for "${this.options.identifier}" → id=${this.resolvedId} ip=${this.resolvedIp} every ${this.pollSeconds}s`,
       );
+      if (!this.keyFromConfig) {
+        this.watchBroadcastKey();
+      }
       this.startTcpPoll();
       return;
     }
@@ -276,24 +406,52 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
       return;
     }
     this.started = false;
+    this.tcpStarted = false;
+    if (this.keyListener) {
+      DeviceKeySniffer.get().offKey(this.keyListener);
+      this.keyListener = undefined;
+    }
     if (this.hubSubscriber) {
       SwitcherUdpHub.get().unsubscribe(this.hubSubscriber);
       this.hubSubscriber = undefined;
     }
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = undefined;
+    this.teardownTcp();
+  }
+
+  private watchBroadcastKey(): void {
+    if (this.keyListener) {
+      return;
     }
-    try {
-      this.device?.close?.();
-    } catch {
-      // ignore
+    this.keyListener = (deviceId, deviceIp, deviceKey) => {
+      const idMatch = this.resolvedId && deviceId.toLowerCase() === this.resolvedId.toLowerCase();
+      const ipMatch = this.resolvedIp && deviceIp === this.resolvedIp;
+      if (!idMatch && !ipMatch) {
+        return;
+      }
+      if (this.keyFromConfig) {
+        return;
+      }
+      if (this.resolvedKey === deviceKey) {
+        return;
+      }
+      this.log(
+        `Learned device_key=${deviceKey} for ${this.resolvedId || deviceId} from UDP broadcast` +
+          (this.resolvedKey ? ` (was ${this.resolvedKey})` : ''),
+      );
+      this.resolvedKey = deviceKey;
+      if (this.tcpStarted) {
+        this.reconnectTcp(`key=${deviceKey}`);
+      }
+    };
+    DeviceKeySniffer.get().onKey(this.keyListener);
+    const learned = DeviceKeySniffer.get().lookup(this.resolvedId, this.resolvedIp);
+    if (learned) {
+      this.resolvedKey = learned;
     }
-    this.device = undefined;
   }
 
   private startTcpPoll(): void {
-    if (this.pollTimer || this.usingTcp || !this.started) {
+    if (this.tcpStarted || !this.started) {
       return;
     }
     if (!this.resolvedId || !this.resolvedIp) {
@@ -307,21 +465,28 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
     }
 
     this.usingTcp = true;
+    this.tcpStarted = true;
     // Login packet embeds device_key. Wrong key → plug ignores login → status times out.
-    // Copy `device_key` from Switcher Platform logs (yours may be 04/05, not 00).
-    const deviceKey = (this.resolvedKey || this.options.deviceKey || '00').trim() || '00';
+    const sniffed = !this.keyFromConfig
+      ? DeviceKeySniffer.get().lookup(this.resolvedId, this.resolvedIp)
+      : undefined;
+    const deviceKey = (this.resolvedKey || sniffed || this.options.deviceKey || '00').trim() || '00';
     this.resolvedKey = deviceKey;
     if (!this.keyFromConfig && deviceKey === '00') {
       this.log(
-        `WARNING: deviceKey not set for ${this.resolvedId} — trying "00". If TCP times out, copy device_key from Switcher Platform logs into laundry deviceKey.`,
+        `deviceKey not set for ${this.resolvedId} — trying "00" and listening for UDP device_key (Platform shows e.g. 04/05)`,
       );
     }
+    this.openTcpDevice(deviceKey);
+  }
+
+  private openTcpDevice(deviceKey: string): void {
     this.log(
       `TCP connect ${this.resolvedId} @ ${this.resolvedIp}:9957 type=power_plug key=${deviceKey}`,
     );
     this.device = new Switcher(
-      this.resolvedId,
-      this.resolvedIp,
+      this.resolvedId!,
+      this.resolvedIp!,
       (message) => this.debugLog(message),
       false,
       'power_plug',
@@ -329,15 +494,38 @@ export class SwitcherPowerSource extends EventEmitter implements PowerSource {
       this.options.token,
       deviceKey,
     );
-    // Belt-and-suspenders: discover() historically stuffed the key into the token slot.
     this.device.update_device_key?.(deviceKey);
 
     const tick = () => {
       void this.pollOnce();
     };
-
     tick();
     this.pollTimer = setInterval(tick, this.pollSeconds * 1000);
+  }
+
+  private teardownTcp(): void {
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = undefined;
+    }
+    try {
+      this.device?.close?.();
+    } catch {
+      // ignore
+    }
+    this.device = undefined;
+  }
+
+  private reconnectTcp(reason: string): void {
+    if (!this.started || !this.resolvedId || !this.resolvedIp || !this.resolvedKey) {
+      return;
+    }
+    this.log(`Reconnecting TCP for ${this.resolvedId} (${reason})`);
+    this.teardownTcp();
+    this.loggedFirstStatus = false;
+    this.loggedBadStatus = false;
+    this.consecutiveFailures = 0;
+    this.openTcpDevice(this.resolvedKey);
   }
 
   private async pollOnce(): Promise<void> {
@@ -430,7 +618,7 @@ export function matchesIdentifier(identifier: string, message: SwitcherMessage):
   );
 }
 
-export { SwitcherUdpHub };
+export { SwitcherUdpHub, DeviceKeySniffer };
 
 function isIpAddress(value: string): boolean {
   return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value);

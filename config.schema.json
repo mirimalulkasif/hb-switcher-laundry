@@ -61,8 +61,7 @@
             "deviceKey": {
               "title": "Device key (TCP login)",
               "type": "string",
-              "required": true,
-              "description": "Copy device_key from Switcher Platform logs (e.g. 04 or 05). Wrong key → TCP status times out."
+              "description": "Optional. Copy device_key from Switcher Platform logs (e.g. 04 or 05). If empty, laundry learns it from UDP broadcasts."
             },
             "startWatts": {
               "title": "Start threshold (W)",
