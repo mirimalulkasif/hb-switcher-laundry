@@ -138,6 +138,8 @@ export class SwitcherLaundryPlatform implements DynamicPlatformPlugin {
       stopWatts: positiveNumber(item.stopWatts, DEFAULT_STOP_WATTS),
       startSeconds: positiveNumber(item.startSeconds, DEFAULT_START_SECONDS),
       stopSeconds: positiveNumber(item.stopSeconds, DEFAULT_STOP_SECONDS),
+      // Optional Empty Me switch — on when Done, off after you empty (or omit = off).
+      showEmptySwitch: item.showEmptySwitch === true,
     };
   }
 }

@@ -14,12 +14,14 @@ export interface LaundryDeviceConfig {
   stopWatts: number;
   startSeconds: number;
   stopSeconds: number;
+  /** Optional switch that turns on when laundry needs emptying. */
+  showEmptySwitch: boolean;
 }
 
 export class LaundryAccessory {
   private readonly doneService: Service;
   private readonly runningService: Service;
-  private readonly clearService: Service;
+  private readonly emptyService?: Service;
   private readonly detector: LaundryCycleDetector;
   private lastWatts = 0;
   private lastLoggedWattsAt = 0;
@@ -51,8 +53,7 @@ export class LaundryAccessory {
       .setCharacteristic(Characteristic.Model, 'Power Plug Laundry')
       .setCharacteristic(Characteristic.SerialNumber, device.deviceId || device.identifier);
 
-    // One HomeKit device (like Home Connect): Running is the primary tile;
-    // Done + Clear Done are linked sensors inside that device.
+    // One HomeKit device: Running is the primary tile; Done (+ optional Empty) linked inside.
     this.runningService = this.accessory.getServiceById(Service.OccupancySensor, 'washer-running')
       || this.accessory.addService(Service.OccupancySensor, device.name, 'washer-running');
     this.runningService.setCharacteristic(Characteristic.Name, device.name);
@@ -65,16 +66,13 @@ export class LaundryAccessory {
     this.doneService.getCharacteristic(Characteristic.ContactSensorState)
       .onGet(() => this.doneContactState());
 
-    this.clearService = this.accessory.getServiceById(Service.Switch, 'clear-done')
-      || this.accessory.addService(Service.Switch, `${device.name} Clear Done`, 'clear-done');
-    this.clearService.setCharacteristic(Characteristic.Name, `${device.name} Clear Done`);
-    this.clearService.getCharacteristic(Characteristic.On)
-      .onGet(() => false)
-      .onSet((value) => this.clearDone(value));
+    this.emptyService = this.setupEmptySwitch(device);
 
     this.runningService.setPrimaryService(true);
     this.runningService.addLinkedService(this.doneService);
-    this.runningService.addLinkedService(this.clearService);
+    if (this.emptyService) {
+      this.runningService.addLinkedService(this.emptyService);
+    }
 
     this.applySnapshot(this.snapshot, true);
 
@@ -134,16 +132,59 @@ export class LaundryAccessory {
     return next;
   }
 
-  private clearDone(value: CharacteristicValue): void {
-    if (!value) {
+  private setupEmptySwitch(device: LaundryDeviceConfig): Service | undefined {
+    const { Characteristic, Service } = this.platform;
+    const legacyClear = this.accessory.getServiceById(Service.Switch, 'clear-done');
+    const existing = this.accessory.getServiceById(Service.Switch, 'needs-emptying');
+    if (legacyClear && legacyClear !== existing) {
+      this.accessory.removeService(legacyClear);
+    }
+
+    if (!device.showEmptySwitch) {
+      if (existing) {
+        this.accessory.removeService(existing);
+      }
+      return undefined;
+    }
+
+    const label = `${device.name} Empty Me`;
+    const service = existing || this.accessory.addService(Service.Switch, label, 'needs-emptying');
+    service.setCharacteristic(Characteristic.Name, label);
+    if ('ConfiguredName' in Characteristic) {
+      try {
+        service.setCharacteristic(Characteristic.ConfiguredName, label);
+      } catch {
+        // older HAP
+      }
+    }
+    service.getCharacteristic(Characteristic.On)
+      .onGet(() => this.snapshot.done)
+      .onSet((value) => this.setEmptySwitch(value));
+    return service;
+  }
+
+  /**
+   * Empty Me switch: turns ON automatically when Done fires.
+   * Turning it OFF means you emptied the machine → clear Done.
+   * Turning it ON manually does nothing unless already done.
+   */
+  private setEmptySwitch(value: CharacteristicValue): void {
+    const requested = Boolean(value);
+    if (requested) {
+      // Stay on only while laundry still needs emptying.
+      if (!this.snapshot.done) {
+        setTimeout(() => {
+          this.emptyService?.updateCharacteristic(this.platform.Characteristic.On, false);
+        }, 100);
+      }
+      return;
+    }
+    if (!this.snapshot.done) {
       return;
     }
     const next = this.detector.acknowledge();
-    this.platform.log.info(`[${this.device.name}] cleared done state`);
+    this.platform.log.info(`[${this.device.name}] emptied — Done cleared`);
     this.applySnapshot(next);
-    setTimeout(() => {
-      this.clearService.updateCharacteristic(this.platform.Characteristic.On, false);
-    }, 250);
   }
 
   private applySnapshot(snapshot: CycleSnapshot, force = false): void {
@@ -155,6 +196,7 @@ export class LaundryAccessory {
     const { Characteristic } = this.platform;
     this.doneService.updateCharacteristic(Characteristic.ContactSensorState, this.doneContactState());
     this.runningService.updateCharacteristic(Characteristic.OccupancyDetected, this.runningOccupancy());
+    this.emptyService?.updateCharacteristic(Characteristic.On, this.snapshot.done);
   }
 
   private doneContactState(): number {

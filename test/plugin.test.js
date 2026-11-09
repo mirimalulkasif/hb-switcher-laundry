@@ -24,7 +24,9 @@ test('the plugin registers the Switcher Laundry platform', () => {
 
 test('HomeKit sensors follow running and done wattage thresholds', async () => {
   const power = new FakePowerSource();
-  const { accessories, launch, shutdown, platform } = createHarness(power);
+  const { accessories, launch, shutdown, platform } = createHarness(power, {
+    showEmptySwitch: true,
+  });
 
   try {
     launch();
@@ -34,19 +36,22 @@ test('HomeKit sensors follow running and done wattage thresholds', async () => {
     const accessory = accessories[0];
     const done = accessory.getServiceById(hap.Service.ContactSensor, 'washer-done');
     const running = accessory.getServiceById(hap.Service.OccupancySensor, 'washer-running');
-    const clear = accessory.getServiceById(hap.Service.Switch, 'clear-done');
+    const empty = accessory.getServiceById(hap.Service.Switch, 'needs-emptying')
+      || accessory.getServiceById(hap.Service.Switch, 'clear-done');
     assert.ok(done);
     assert.ok(running);
-    assert.ok(clear);
+    assert.ok(empty);
     assert.equal(running.isPrimaryService, true);
     assert.ok(running.linkedServices.includes(done));
-    assert.ok(running.linkedServices.includes(clear));
+    assert.ok(running.linkedServices.includes(empty));
 
     const contact = done.getCharacteristic(hap.Characteristic.ContactSensorState);
     const occupancy = running.getCharacteristic(hap.Characteristic.OccupancyDetected);
+    const emptyOn = empty.getCharacteristic(hap.Characteristic.On);
 
     assert.equal(contact.value, hap.Characteristic.ContactSensorState.CONTACT_DETECTED);
     assert.equal(occupancy.value, hap.Characteristic.OccupancyDetected.OCCUPANCY_NOT_DETECTED);
+    assert.equal(emptyOn.value, false);
 
     const handler = platform.handlers[0];
     const t0 = 1_700_000_000_000;
@@ -54,11 +59,33 @@ test('HomeKit sensors follow running and done wattage thresholds', async () => {
     handler.ingestWatts(20, t0 + 2_000);
     assert.equal(occupancy.value, hap.Characteristic.OccupancyDetected.OCCUPANCY_DETECTED);
     assert.equal(contact.value, hap.Characteristic.ContactSensorState.CONTACT_DETECTED);
+    assert.equal(emptyOn.value, false);
 
     handler.ingestWatts(1, t0 + 3_000);
     handler.ingestWatts(1, t0 + 6_000);
     assert.equal(occupancy.value, hap.Characteristic.OccupancyDetected.OCCUPANCY_NOT_DETECTED);
     assert.equal(contact.value, hap.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED);
+    assert.equal(emptyOn.value, true);
+
+    await setCharacteristic(emptyOn, false);
+    assert.equal(contact.value, hap.Characteristic.ContactSensorState.CONTACT_DETECTED);
+    assert.equal(emptyOn.value, false);
+  } finally {
+    shutdown();
+  }
+});
+
+test('Empty Me switch is omitted unless showEmptySwitch is true', async () => {
+  const power = new FakePowerSource();
+  const { accessories, launch, shutdown, platform } = createHarness(power, {
+    showEmptySwitch: false,
+  });
+  try {
+    launch();
+    await platform.ready;
+    const accessory = accessories[0];
+    assert.equal(accessory.getServiceById(hap.Service.Switch, 'needs-emptying'), undefined);
+    assert.equal(accessory.getServiceById(hap.Service.Switch, 'clear-done'), undefined);
   } finally {
     shutdown();
   }
@@ -162,7 +189,7 @@ test('restoring a cached accessory does not duplicate services', async () => {
   second.shutdown();
 });
 
-function createHarness(power) {
+function createHarness(power, deviceOverrides = {}) {
   const accessories = [];
   let launch = () => {};
   let shutdown = () => {};
@@ -197,8 +224,15 @@ function createHarness(power) {
       stopWatts: 2,
       startSeconds: 2,
       stopSeconds: 3,
+      ...deviceOverrides,
     }],
   }, api, () => power);
 
   return { accessories, launch, shutdown, platform };
+}
+
+function setCharacteristic(characteristic, value) {
+  return new Promise((resolve, reject) => {
+    characteristic.setValue(value, (error) => (error ? reject(error) : resolve()));
+  });
 }

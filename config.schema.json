@@ -2,8 +2,8 @@
   "pluginAlias": "SwitcherLaundry",
   "pluginType": "platform",
   "singular": true,
-  "headerDisplay": "Watches a Switcher Power Plug over your LAN and exposes HomeKit sensors when a laundry cycle finishes. Set deviceId + deviceIp on each plug so watts are polled over TCP (recommended).",
-  "footerDisplay": "HomeKit sensors per device: Running (occupancy) — on while the machine is drawing sustained power. Done (contact) — opens when a cycle finishes (use this for notifications). Clear Done (switch) — tap to close Done after you emptied the machine, without waiting for the next cycle.",
+  "headerDisplay": "Watches a Switcher Power Plug over your LAN and exposes HomeKit sensors when a laundry cycle finishes. Set deviceId + deviceIp on each plug so watts are polled over TCP (recommended). The main tile is Running.",
+  "footerDisplay": "HomeKit per device: Running (occupancy, main) — on while the machine draws sustained power. Done (contact) — opens when a cycle finishes and stays open until the next cycle starts or you clear it (use for notifications). Empty Me (optional switch) — turns on with Done; turn it off after you emptied the machine to clear Done.",
   "schema": {
     "type": "object",
     "properties": {
@@ -63,6 +63,12 @@
               "title": "Device key (TCP login)",
               "type": "string",
               "description": "Optional. Copy device_key from Switcher Platform logs (e.g. 04 or 05). If empty, laundry learns it from UDP broadcasts."
+            },
+            "showEmptySwitch": {
+              "title": "Show Empty Me switch",
+              "type": "boolean",
+              "default": false,
+              "description": "Optional. When a cycle finishes, turns this switch on so you remember to empty the machine. Turn the switch off after emptying to clear Done."
             },
             "startWatts": {
               "title": "Start threshold (W)",
