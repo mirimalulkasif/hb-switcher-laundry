@@ -10,9 +10,9 @@ If Eve freezes but the **Switcher app** still shows live watts, laundry TCP poll
 
 For each configured plug, Home shows **one device** (named like the washer/dryer):
 
-- **Primary tile — Running** — occupancy; on while the machine draws sustained power
-- **Done** (inside the device) — contact sensor that opens when a cycle finishes (use for notifications)
-- **Clear Done** (inside the device) — momentary switch to close Done without waiting for the next cycle
+- **Running** (occupancy) — on while the machine is drawing sustained power (a cycle in progress)
+- **Done** (contact) — opens when a cycle finishes; use this for “laundry finished” notifications
+- **Clear Done** (switch) — tap after you emptied the machine to close Done without waiting for the next cycle
 
 This mirrors the Home Connect “appliance + sensors” layout as closely as classic HomeKit allows.
 
